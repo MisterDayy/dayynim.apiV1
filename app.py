@@ -6,44 +6,73 @@ from flask import Flask, jsonify, request, render_template
 
 app = Flask(__name__)
 
-# ---------------------------------------------------------------- rate limit
-RATE_LIMIT = 100          # max request
-RATE_WINDOW = 60          # per detik (60 = per menit)
+# ---------------------------------------------------------------- rate limit / ban / paid key
+RATE_LIMIT_FREE = 100     # request per menit buat IP biasa (gratis)
+RATE_WINDOW = 60          # detik (60 = per menit)
+VIOLATION_WINDOW = 3600   # strike ke-limit dihitung dalam 1 jam
+BAN_THRESHOLD = 5         # kena limit 5x dalam 1 jam -> auto-ban (permanen sampe di-unban manual)
 
 UPSTASH_URL = os.environ.get("UPSTASH_REDIS_REST_URL")
 UPSTASH_TOKEN = os.environ.get("UPSTASH_REDIS_REST_TOKEN")
+ADMIN_SECRET = os.environ.get("ADMIN_SECRET")  # buat endpoint /api/admin/*
 
 # Fallback in-memory buat local dev kalau env Upstash belum di-set
 _hits = defaultdict(deque)
+_banned_memory = set()
 
 
 def get_client_ip():
-    # Kalau di belakang proxy/CDN (Vercel), ambil IP asli dari header ini
     fwd = request.headers.get("X-Forwarded-For", "")
     if fwd:
         return fwd.split(",")[0].strip()
     return request.remote_addr or "unknown"
 
 
-def check_rate_limit_redis(ip):
-    """Pakai pipeline INCR + EXPIRE biar atomic. Return (allowed, retry_after)."""
-    key = f"ratelimit:{ip}:{int(time.time() // RATE_WINDOW)}"
+def redis_cmd(*parts):
+    """Jalanin 1 command Redis via Upstash REST. Return hasilnya (results['result'])."""
     headers = {"Authorization": f"Bearer {UPSTASH_TOKEN}"}
-    pipeline = [["INCR", key], ["EXPIRE", key, RATE_WINDOW]]
-    r = requests.post(f"{UPSTASH_URL}/pipeline", json=pipeline, headers=headers, timeout=5)
-    results = r.json()
+    r = requests.post(f"{UPSTASH_URL}/{'/'.join(str(p) for p in parts)}", headers=headers, timeout=5)
+    return r.json().get("result")
+
+
+def redis_pipeline(commands):
+    headers = {"Authorization": f"Bearer {UPSTASH_TOKEN}"}
+    r = requests.post(f"{UPSTASH_URL}/pipeline", json=commands, headers=headers, timeout=5)
+    return r.json()
+
+
+def is_banned_redis(ip):
+    return redis_cmd("GET", f"banned:{ip}") is not None
+
+
+def get_api_key_limit_redis(key):
+    val = redis_cmd("GET", f"apikey:{key}")
+    return int(val) if val else None
+
+
+def record_violation_and_maybe_ban_redis(ip):
+    key = f"violations:{ip}"
+    results = redis_pipeline([["INCR", key], ["EXPIRE", key, VIOLATION_WINDOW]])
     count = results[0]["result"]
-    if count > RATE_LIMIT:
+    if count >= BAN_THRESHOLD:
+        redis_cmd("SET", f"banned:{ip}", "1")  # gak dikasih TTL = permanen sampe di-unban manual
+
+
+def check_rate_limit_redis(identifier, limit):
+    key = f"ratelimit:{identifier}:{int(time.time() // RATE_WINDOW)}"
+    results = redis_pipeline([["INCR", key], ["EXPIRE", key, RATE_WINDOW]])
+    count = results[0]["result"]
+    if count > limit:
         return False, RATE_WINDOW
     return True, 0
 
 
-def check_rate_limit_memory(ip):
+def check_rate_limit_memory(ip, limit):
     now = time.time()
     q = _hits[ip]
     while q and now - q[0] > RATE_WINDOW:
         q.popleft()
-    if len(q) >= RATE_LIMIT:
+    if len(q) >= limit:
         return False, int(RATE_WINDOW - (now - q[0])) + 1
     q.append(now)
     return True, 0
@@ -51,23 +80,112 @@ def check_rate_limit_memory(ip):
 
 @app.before_request
 def rate_limit():
-    if request.path.startswith("/static"):
+    if request.path.startswith("/static") or request.path.startswith("/api/admin"):
         return
+
     ip = get_client_ip()
+    api_key = request.headers.get("X-API-Key")
+    use_redis = bool(UPSTASH_URL and UPSTASH_TOKEN)
+
     try:
-        if UPSTASH_URL and UPSTASH_TOKEN:
-            allowed, retry_after = check_rate_limit_redis(ip)
-        else:
-            allowed, retry_after = check_rate_limit_memory(ip)
+        if use_redis and is_banned_redis(ip):
+            resp = jsonify({"error": "IP kamu diblokir karena berulang kali melebihi rate limit. Hubungi admin buat unban."})
+            resp.status_code = 403
+            return resp
     except Exception:
-        # Kalau Upstash lagi down/timeout, jangan sampe API ikut down—fallback ke memory
-        allowed, retry_after = check_rate_limit_memory(ip)
+        pass  # kalau Upstash lagi error, jangan sampe nge-block semua orang
+
+    if ip in _banned_memory:
+        resp = jsonify({"error": "IP kamu diblokir karena berulang kali melebihi rate limit. Hubungi admin buat unban."})
+        resp.status_code = 403
+        return resp
+
+    limit = RATE_LIMIT_FREE
+    identifier = ip
+    is_paid = False
+
+    if api_key and use_redis:
+        try:
+            key_limit = get_api_key_limit_redis(api_key)
+            if key_limit:
+                limit = key_limit
+                identifier = f"key:{api_key}"
+                is_paid = True
+        except Exception:
+            pass
+
+    try:
+        if use_redis:
+            allowed, retry_after = check_rate_limit_redis(identifier, limit)
+        else:
+            allowed, retry_after = check_rate_limit_memory(identifier, limit)
+    except Exception:
+        allowed, retry_after = check_rate_limit_memory(identifier, limit)
 
     if not allowed:
-        resp = jsonify({"error": "Terlalu banyak request, coba lagi nanti.", "limit": RATE_LIMIT, "window_seconds": RATE_WINDOW})
+        if not is_paid:
+            try:
+                if use_redis:
+                    record_violation_and_maybe_ban_redis(ip)
+                else:
+                    _hits[ip]  # no-op, memory mode gak nge-track strike/ban
+            except Exception:
+                pass
+        resp = jsonify({"error": "Terlalu banyak request, coba lagi nanti.", "limit": limit, "window_seconds": RATE_WINDOW})
         resp.status_code = 429
         resp.headers["Retry-After"] = str(retry_after)
         return resp
+
+
+def require_admin():
+    secret = request.headers.get("X-Admin-Key")
+    return bool(ADMIN_SECRET) and secret == ADMIN_SECRET
+
+
+@app.route("/api/admin/unban", methods=["POST"])
+def admin_unban():
+    if not require_admin():
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(silent=True) or {}
+    ip = data.get("ip")
+    if not ip:
+        return jsonify({"error": "missing 'ip'"}), 400
+    if UPSTASH_URL and UPSTASH_TOKEN:
+        redis_cmd("DEL", f"banned:{ip}")
+        redis_cmd("DEL", f"violations:{ip}")
+    _banned_memory.discard(ip)
+    return jsonify({"ok": True, "unbanned": ip})
+
+
+@app.route("/api/admin/ban", methods=["POST"])
+def admin_ban():
+    if not require_admin():
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(silent=True) or {}
+    ip = data.get("ip")
+    if not ip:
+        return jsonify({"error": "missing 'ip'"}), 400
+    if UPSTASH_URL and UPSTASH_TOKEN:
+        redis_cmd("SET", f"banned:{ip}", "1")
+    else:
+        _banned_memory.add(ip)
+    return jsonify({"ok": True, "banned": ip})
+
+
+@app.route("/api/admin/add-key", methods=["POST"])
+def admin_add_key():
+    """Bikin/update API key berbayar. Body: {"key": "abc123", "limit": 1000}"""
+    if not require_admin():
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(silent=True) or {}
+    key = data.get("key")
+    limit = data.get("limit")
+    if not key or not limit:
+        return jsonify({"error": "missing 'key' or 'limit'"}), 400
+    if not (UPSTASH_URL and UPSTASH_TOKEN):
+        return jsonify({"error": "Upstash belum dikonfigurasi"}), 500
+    redis_cmd("SET", f"apikey:{key}", str(int(limit)))
+    return jsonify({"ok": True, "key": key, "limit": int(limit)})
 
 
 @app.after_request
