@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DayyAPI — Movie & TV Data Proxy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="scanlines"></div>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <span class="brand">Dayy<span class="brand-accent">API</span></span>
+    <nav class="topnav">
+      <a href="#endpoints">endpoints</a>
+      <a href="#servers">servers</a>
+      <a href="#status" id="statusPill" class="status-pill">
+        <span class="dot"></span> checking
+      </a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+  <!-- ================= HERO : LIVE TERMINAL ================= -->
+  <section class="hero">
+    <div class="hero-text">
+      <p class="eyebrow">// rest api · reverse-engineered, rebuilt clean</p>
+      <h1>Satu endpoint.<br>Semua data film &amp; serial.</h1>
+      <p class="hero-sub">
+        DayyAPI membungkus data trending, discover, pencarian, dan resolusi server
+        streaming jadi satu REST API yang konsisten. Gak perlu scrape ulang tiap kali
+        ganti sumber — tinggal <span class="kbd">GET</span> dan parse JSON-nya.
+      </p>
+      <div class="hero-cta">
+        <a href="#endpoints" class="btn btn-primary">Lihat endpoint</a>
+        <a href="#try" class="btn btn-ghost">Coba live &rarr;</a>
+      </div>
+    </div>
+
+    <div class="terminal" id="heroTerminal">
+      <div class="terminal-bar">
+        <span class="tdot r"></span><span class="tdot y"></span><span class="tdot g"></span>
+        <span class="terminal-title">zsh — dayyapi-demo</span>
+      </div>
+      <pre class="terminal-body" id="terminalBody"></pre>
+    </div>
+  </section>
+
+  <!-- ================= ENDPOINT REFERENCE ================= -->
+  <section id="endpoints" class="endpoints">
+    <div class="section-head">
+      <p class="eyebrow">// reference</p>
+      <h2>Endpoint</h2>
+    </div>
+
+    <div class="endpoint-list" id="endpointList"></div>
+  </section>
+
+  <!-- ================= SERVERS ================= -->
+  <section id="servers" class="servers">
+    <div class="section-head">
+      <p class="eyebrow">// player resolution</p>
+      <h2>Server embed</h2>
+      <p class="section-sub">
+        <span class="kbd">/api/servers/&lt;type&gt;/&lt;id&gt;</span> ngembaliin daftar URL
+        embed dari beberapa provider sekaligus, biar frontend bisa kasih dropdown
+        fallback kalau satu server down.
+      </p>
+    </div>
+    <div class="server-grid" id="serverGrid"></div>
+  </section>
+
+  <!-- ================= TRY IT ================= -->
+  <section id="try" class="tryit">
+    <div class="section-head">
+      <p class="eyebrow">// sandbox</p>
+      <h2>Coba sekarang</h2>
+    </div>
+    <div class="tryit-panel">
+      <div class="tryit-row">
+        <select id="tryEndpoint">
+          <option value="/api/home?only=trending,popular">GET /api/home</option>
+          <option value="/api/trending?media=movie">GET /api/trending</option>
+          <option value="/api/popular">GET /api/popular</option>
+          <option value="/api/now-playing">GET /api/now-playing</option>
+          <option value="/api/search?q=moana">GET /api/search?q=moana</option>
+          <option value="/api/genres">GET /api/genres</option>
+          <option value="/api/servers/movie/550">GET /api/servers/movie/550</option>
+        </select>
+        <button id="tryRun" class="btn btn-primary">Jalankan</button>
+      </div>
+      <pre class="tryit-output" id="tryOutput">// hasil response bakal muncul di sini</pre>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <span>DayyAPI · data via TMDB · dibangun buat proyek streaming pribadi</span>
+</footer>
+
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
