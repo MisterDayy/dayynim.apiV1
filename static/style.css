@@ -95,6 +95,35 @@ body{
 .btn-ghost{border-color:var(--line); color:var(--text); background:transparent;}
 .btn-ghost:hover{border-color:var(--green-dim);}
 
+.base-url-box{
+  display:flex; align-items:center; gap:10px;
+  margin-top:22px; padding:10px 10px 10px 14px;
+  background:var(--bg-raised); border:1px solid var(--line); border-radius:8px;
+  max-width:fit-content;
+}
+.base-url-label{
+  font-family:var(--mono); font-size:0.68rem; letter-spacing:0.06em;
+  color:var(--green-dim); white-space:nowrap;
+}
+.base-url-text{
+  font-family:var(--mono); font-size:0.85rem; color:var(--text);
+  white-space:nowrap; overflow-x:auto;
+}
+.copy-btn{
+  font-family:var(--mono); font-size:0.72rem; font-weight:600;
+  background:transparent; color:var(--green); border:1px solid var(--green-dim);
+  padding:6px 12px; border-radius:6px; cursor:pointer; white-space:nowrap;
+}
+.copy-btn:hover{background:rgba(57,255,136,0.1);}
+.copy-btn.copied{background:var(--green); color:#04140a; border-color:var(--green);}
+
+.rate-note{
+  display:flex; align-items:center; gap:8px;
+  margin:14px 0 0; font-family:var(--mono); font-size:0.78rem; color:var(--muted);
+}
+.dot-warn{width:7px; height:7px; border-radius:50%; background:var(--amber); flex-shrink:0;}
+.rate-note strong{color:var(--text);}
+
 .terminal{
   background:var(--bg-raised);
   border:1px solid var(--line);

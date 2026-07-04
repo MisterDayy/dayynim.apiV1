@@ -243,11 +243,40 @@ async function runHeroTerminal() {
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ---------------- try it sandbox ----------------
+function initBaseUrl() {
+  const base = window.location.origin;
+  const textEl = document.getElementById("baseUrlText");
+  const btn = document.getElementById("copyBaseUrl");
+  if (!textEl || !btn) return;
+  textEl.textContent = base;
+
+  btn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(base);
+    } catch (e) {
+      // fallback buat browser lama / non-https context
+      const tmp = document.createElement("textarea");
+      tmp.value = base;
+      document.body.appendChild(tmp);
+      tmp.select();
+      document.execCommand("copy");
+      document.body.removeChild(tmp);
+    }
+    btn.textContent = "Copied!";
+    btn.classList.add("copied");
+    setTimeout(() => {
+      btn.textContent = "Copy";
+      btn.classList.remove("copied");
+    }, 1500);
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   renderEndpoints();
   renderServers();
   checkStatus();
   runHeroTerminal();
+  initBaseUrl();
 
   document.getElementById("tryRun").addEventListener("click", async () => {
     const path = document.getElementById("tryEndpoint").value;

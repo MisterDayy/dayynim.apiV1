@@ -41,6 +41,18 @@
         <a href="#endpoints" class="btn btn-primary">Lihat endpoint</a>
         <a href="#try" class="btn btn-ghost">Coba live &rarr;</a>
       </div>
+
+      <div class="base-url-box">
+        <span class="base-url-label">BASE URL</span>
+        <code id="baseUrlText" class="base-url-text"></code>
+        <button id="copyBaseUrl" class="copy-btn" type="button">Copy</button>
+      </div>
+
+      <p class="rate-note">
+        <span class="dot-warn"></span>
+        Limit <strong>100 request / menit</strong> per IP. Lewat itu bakal dapet
+        <span class="kbd">429</span>.
+      </p>
     </div>
 
     <div class="terminal" id="heroTerminal">
