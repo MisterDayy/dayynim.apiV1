@@ -124,6 +124,18 @@ body{
 .dot-warn{width:7px; height:7px; border-radius:50%; background:var(--amber); flex-shrink:0;}
 .rate-note strong{color:var(--text);}
 
+.upgrade-note{
+  display:flex; align-items:center; gap:8px;
+  margin-top:10px; padding:8px 12px;
+  font-family:var(--mono); font-size:0.78rem; color:var(--muted);
+  text-decoration:none; background:rgba(57,255,136,0.06);
+  border:1px solid var(--green-dim); border-radius:8px; max-width:fit-content;
+  transition:background .15s, border-color .15s;
+}
+.upgrade-note:hover{background:rgba(57,255,136,0.14); border-color:var(--green);}
+.upgrade-note strong{color:var(--green);}
+.dot-up{width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 6px var(--green); flex-shrink:0;}
+
 .terminal{
   background:var(--bg-raised);
   border:1px solid var(--line);
