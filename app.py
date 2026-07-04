@@ -1,9 +1,73 @@
 import os
 import time
 import requests
+from collections import defaultdict, deque
 from flask import Flask, jsonify, request, render_template
 
 app = Flask(__name__)
+
+# ---------------------------------------------------------------- rate limit
+RATE_LIMIT = 100          # max request
+RATE_WINDOW = 60          # per detik (60 = per menit)
+
+UPSTASH_URL = os.environ.get("UPSTASH_REDIS_REST_URL")
+UPSTASH_TOKEN = os.environ.get("UPSTASH_REDIS_REST_TOKEN")
+
+# Fallback in-memory buat local dev kalau env Upstash belum di-set
+_hits = defaultdict(deque)
+
+
+def get_client_ip():
+    # Kalau di belakang proxy/CDN (Vercel), ambil IP asli dari header ini
+    fwd = request.headers.get("X-Forwarded-For", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.remote_addr or "unknown"
+
+
+def check_rate_limit_redis(ip):
+    """Pakai pipeline INCR + EXPIRE biar atomic. Return (allowed, retry_after)."""
+    key = f"ratelimit:{ip}:{int(time.time() // RATE_WINDOW)}"
+    headers = {"Authorization": f"Bearer {UPSTASH_TOKEN}"}
+    pipeline = [["INCR", key], ["EXPIRE", key, RATE_WINDOW]]
+    r = requests.post(f"{UPSTASH_URL}/pipeline", json=pipeline, headers=headers, timeout=5)
+    results = r.json()
+    count = results[0]["result"]
+    if count > RATE_LIMIT:
+        return False, RATE_WINDOW
+    return True, 0
+
+
+def check_rate_limit_memory(ip):
+    now = time.time()
+    q = _hits[ip]
+    while q and now - q[0] > RATE_WINDOW:
+        q.popleft()
+    if len(q) >= RATE_LIMIT:
+        return False, int(RATE_WINDOW - (now - q[0])) + 1
+    q.append(now)
+    return True, 0
+
+
+@app.before_request
+def rate_limit():
+    if request.path.startswith("/static"):
+        return
+    ip = get_client_ip()
+    try:
+        if UPSTASH_URL and UPSTASH_TOKEN:
+            allowed, retry_after = check_rate_limit_redis(ip)
+        else:
+            allowed, retry_after = check_rate_limit_memory(ip)
+    except Exception:
+        # Kalau Upstash lagi down/timeout, jangan sampe API ikut down—fallback ke memory
+        allowed, retry_after = check_rate_limit_memory(ip)
+
+    if not allowed:
+        resp = jsonify({"error": "Terlalu banyak request, coba lagi nanti.", "limit": RATE_LIMIT, "window_seconds": RATE_WINDOW})
+        resp.status_code = 429
+        resp.headers["Retry-After"] = str(retry_after)
+        return resp
 
 
 @app.after_request
